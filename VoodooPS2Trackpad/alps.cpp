@@ -2248,10 +2248,11 @@ error:
     return false;
 }
 
-void ALPS::alps_get_otp_values_ss4_v2(unsigned char index)
+ALPSStatus_t ALPS::alps_get_otp_values_ss4_v2(unsigned char index)
 {
     int cmd = 0;
     TPS2Request<4> request;
+    ALPSStatus_t status;
     
     switch (index) {
         case 0:
@@ -2290,6 +2291,13 @@ void ALPS::alps_get_otp_values_ss4_v2(unsigned char index)
             
             break;
     }
+
+    /* results */
+    status.bytes[0] = request.commands[1].inOrOut;
+    status.bytes[1] = request.commands[2].inOrOut;
+    status.bytes[2] = request.commands[3].inOrOut;
+
+    return status;
 }
 
 void ALPS::alps_set_defaults_ss4_v2(struct alps_data *priv)
@@ -2574,22 +2582,7 @@ void ALPS::set_protocol() {
             priv.flags = 0;
             
             alps_set_defaults_ss4_v2(&priv);
-            
-            //TODO: V8: add detection of tarckstick using the "alps_set_defaults_ss4_v2(&priv)" funtcion
-            if (priv.fw_ver[1] == 0x1) {
-                // buttons and trackpad
-                priv.x_max = 8160;
-                priv.y_max = 4080;
-                priv.flags |= ALPS_DUALPOINT |
-                ALPS_DUALPOINT_WITH_PRESSURE;
-                IOLog("ALPS: TrackStick detected... (WARNING: V8 TrackStick disabled)\n");
-            } else {
-                // buttonless
-                priv.x_max = 8176;
-                priv.y_max = 4088;
-                priv.flags |= ALPS_BUTTONPAD;
-                IOLog("ALPS: ButtonPad Detected...\n");
-            }
+
             break;
     }
 }
@@ -2685,17 +2678,10 @@ IOReturn ALPS::identify() {
         IOLog("ALPS: Found a V3 Pinnacle TouchPad with ID: E7=0x%02x 0x%02x 0x%02x, EC=0x%02x 0x%02x 0x%02x\n", e7.bytes[0], e7.bytes[1], e7.bytes[2], ec.bytes[0], ec.bytes[1], ec.bytes[2]);
         
     } else if (e7.bytes[0] == 0x73 && e7.bytes[1] == 0x03 &&
-               e7.bytes[2] == 0x14 && ec.bytes[1] == 0x02) {
+              (e7.bytes[2] == 0x14 || e7.bytes[2] == 0x28)) {
         priv.proto_version = ALPS_PROTO_V8;
         IOLog("ALPS: Found a V8 TouchPad with ID: E7=0x%02x 0x%02x 0x%02x, EC=0x%02x 0x%02x 0x%02x\n", e7.bytes[0], e7.bytes[1], e7.bytes[2], ec.bytes[0], ec.bytes[1], ec.bytes[2]);
-        
-        
-    } else if (e7.bytes[0] == 0x73 && e7.bytes[1] == 0x03 &&
-               e7.bytes[2] == 0x28 && ec.bytes[1] == 0x01) {
-        priv.proto_version = ALPS_PROTO_V8;
-        IOLog("ALPS: Found a V8 Flare TouchPad with ID: E7=0x%02x 0x%02x 0x%02x, EC=0x%02x 0x%02x 0x%02x\n", e7.bytes[0], e7.bytes[1], e7.bytes[2], ec.bytes[0], ec.bytes[1], ec.bytes[2]);
-        
-        
+
     } else {
         IOLog("ALPS DRIVER: TouchPad didn't match any known IDs: E7=0x%02x 0x%02x 0x%02x, EC=0x%02x 0x%02x 0x%02x ... driver will now exit\n",
               e7.bytes[0], e7.bytes[1], e7.bytes[2], ec.bytes[0], ec.bytes[1], ec.bytes[2]);
@@ -2703,6 +2689,7 @@ IOReturn ALPS::identify() {
     }
     
     /* Save the Firmware version */
+    memcpy(priv.dev_id, e7.bytes, 3);
     memcpy(priv.fw_ver, ec.bytes, 3);
     set_protocol();
     return 0;
